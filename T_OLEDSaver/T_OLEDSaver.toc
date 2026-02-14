@@ -1,0 +1,8 @@
+## Interface: 30300
+## Title: Thormrand's OLED Saver
+## Notes: Simple script to reduce the burns on your OLED screen.
+## Author: Thormrand
+## Version: 1.1.0
+## SavedVariables: T_OLEDSaverDB
+
+T_OLEDSaver.lua
