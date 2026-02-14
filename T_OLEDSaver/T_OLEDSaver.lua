@@ -1,16 +1,16 @@
 --[[
     Thormrand's OLED Saver - OLED Burn-in Prevention for WoW 3.3.5a
     Author: Thormrand
-    Version: 1.2.0
+    Version: 1.3.0
     Description: Simple script to reduce the burns on your OLED screen.
 ]]
 
 -- Configuration
 local CONFIG = {
     AFK_TIMEOUT = 300,      -- Seconds of inactivity before blackout (5 minutes)
-    UPDATE_INTERVAL = 0.05, -- Faster update for smoother movement.
-    FACT_DURATION = 10,     -- Seconds to show each fact.
-    TEXT_SPEED = 1.2,       -- Movement speed.
+    UPDATE_INTERVAL = 0.05, -- Faster update for smoother movement (text is larger now)
+    FACT_DURATION = 10,     -- Seconds to show each fact
+    TEXT_SPEED = 1.0,       -- Movement speed
     DEBUG = false
 }
 
@@ -108,9 +108,11 @@ local FACTS = {
     "LEGEND: Martin Fury, a developer item that killed everything, was used to clear Ulduar—though this occurred in WotLK, not Vanilla.",
 }
 
+-- Addon namespace
 local T_OLEDSaver = CreateFrame("Frame", "T_OLEDSaverCore", UIParent)
 T_OLEDSaver:SetScript("OnEvent", function(self, event, ...) self[event](self, event, ...) end)
 
+-- State Variables
 local lastInputTime = GetTime()
 local timeSinceLastUpdate = 0
 local timeSinceLastFact = 0
@@ -118,21 +120,27 @@ local isBlackoutActive = false
 local lastMouseX, lastMouseY = GetCursorPosition()
 local afkStartTime = 0
 
+-- ---
+-- VISUAL LAYER (The Curtain)
+-- ---
 local Curtain = CreateFrame("Frame", "T_OLEDSaverCurtain", UIParent)
-Curtain:SetFrameStrata("TOOLTIP")
+Curtain:SetFrameStrata("TOOLTIP") -- Highest standard strata to cover everything
 Curtain:SetAllPoints(UIParent)
 Curtain:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-Curtain:SetBackdropColor(0, 0, 0, 1)
-Curtain:EnableMouse(true)
+Curtain:SetBackdropColor(0, 0, 0, 1) -- Opaque Black
+Curtain:EnableMouse(true)            -- Catch clicks
 Curtain:Hide()
 
+-- The Floater (Bouncing Text)
 local Floater = Curtain:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+-- Low luminosity gray (light gray at most)
 Floater:SetTextColor(0.5, 0.5, 0.5, 1)
 Floater:SetJustifyH("CENTER")
-Floater:SetWidth(600)
+Floater:SetWidth(600) -- Constrain width for wrapping
 Floater:SetWordWrap(true)
 Floater:SetSpacing(4)
 
+-- Floater Physics
 local floaterPhys = {
     x = 0,
     y = 0,
@@ -142,6 +150,10 @@ local floaterPhys = {
     limitX = 0,
     limitY = 0
 }
+
+-- ---
+-- CORE FUNCTIONS
+-- ---
 
 local function DebugPrint(msg)
     if CONFIG.DEBUG then DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[T_OLEDSaver]|r " .. msg) end
@@ -153,6 +165,7 @@ local function RefreshLimits()
     floaterPhys.limitX = (screenWidth / 2) - (Floater:GetWidth() / 2)
     floaterPhys.limitY = (screenHeight / 2) - (Floater:GetHeight() / 2)
 
+    -- Safety clamp if text is huge
     if floaterPhys.limitX < 0 then floaterPhys.limitX = 0 end
     if floaterPhys.limitY < 0 then floaterPhys.limitY = 0 end
 end
@@ -164,9 +177,11 @@ local function PickNewFact()
 end
 
 local function UpdateFloaterPosition()
+    -- Move
     floaterPhys.x = floaterPhys.x + (floaterPhys.dx * floaterPhys.speed)
     floaterPhys.y = floaterPhys.y + (floaterPhys.dy * floaterPhys.speed)
 
+    -- Bounce X
     if floaterPhys.x > floaterPhys.limitX then
         floaterPhys.x = floaterPhys.limitX
         floaterPhys.dx = -1
@@ -194,11 +209,17 @@ local function ActivateBlackout()
     isBlackoutActive = true
     afkStartTime = GetTime()
     Curtain:Show()
+    
+    -- Hide cursor
+    SetCursor(nil)
+    
     DebugPrint("Blackout Activated")
 
+    -- Initial Fact
     PickNewFact()
     timeSinceLastFact = 0
 
+    -- Reset physics
     floaterPhys.x = 0
     floaterPhys.y = 0
     floaterPhys.dx = (math.random() > 0.5) and 1 or -1
@@ -210,9 +231,17 @@ local function DeactivateBlackout()
 
     isBlackoutActive = false
     Curtain:Hide()
+    
+    -- Restore cursor
+    SetCursor(nil)
+    
     lastInputTime = GetTime()
     DebugPrint("Blackout Deactivated")
 end
+
+-- ---
+-- EVENT HANDLERS
+-- ---
 
 function T_OLEDSaver:PLAYER_FLAGS_CHANGED()
     if UnitIsAFK("player") then
@@ -237,12 +266,17 @@ end
 
 T_OLEDSaver:RegisterEvent("PLAYER_ENTERING_WORLD")
 
+-- ---
+-- UPDATE LOOP
+-- ---
+
 local totalElapsed = 0
 
 T_OLEDSaver:SetScript("OnUpdate", function(self, elapsed)
     local currentTime = GetTime()
     totalElapsed = totalElapsed + elapsed
 
+    -- 1. Check Input
     local currentX, currentY = GetCursorPosition()
     if abs(currentX - lastMouseX) > 1 or abs(currentY - lastMouseY) > 1 then
         lastInputTime = currentTime
@@ -250,19 +284,23 @@ T_OLEDSaver:SetScript("OnUpdate", function(self, elapsed)
         if isBlackoutActive then DeactivateBlackout() end
     end
 
+    -- 2. Timer Trigger
     if not isBlackoutActive and not UnitAffectingCombat("player") then
         if (currentTime - lastInputTime) > CONFIG.AFK_TIMEOUT then
             ActivateBlackout()
         end
     end
 
+    -- 3. Animation & Logic
     if isBlackoutActive then
+        -- Move Text
         timeSinceLastUpdate = timeSinceLastUpdate + elapsed
         if timeSinceLastUpdate > CONFIG.UPDATE_INTERVAL then
             UpdateFloaterPosition()
             timeSinceLastUpdate = 0
         end
 
+        -- Rotate Facts
         timeSinceLastFact = timeSinceLastFact + elapsed
         if timeSinceLastFact > CONFIG.FACT_DURATION then
             PickNewFact()
